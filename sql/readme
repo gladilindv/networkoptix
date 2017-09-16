@@ -1,0 +1,5 @@
+Оба запроса проверены на СУБД:
+- PostgreSQL 9.5
+- MySQL 5.6
+- Oracle 11g R2
+- MS SQL 2014
