@@ -6,35 +6,58 @@
 #include <random> 
 #include <ctime>
 
+std::mutex g_lockprint;
+
 
 template <typename T>
 class SyncQueue {
 	mutable std::mutex m;
 	std::queue<T> q;
+	std::condition_variable c;
+	bool n = false;
 
 	static int cnt;
 public:
 	T pop(){
-		std::lock_guard<std::mutex> locker(m);
+		// try to lock main mutex
+		std::unique_lock<std::mutex> locker(m);
 		
+		// check queue
 		if(q.empty()){
-			std::cout << "\t\tempty  " << ++cnt << std::endl;
-			return T();
+			{
+				std::lock_guard<std::mutex> lp(g_lockprint);
+				std::cout << "\t\tempty  " << ++cnt << " ...waiting [" << std::this_thread::get_id() << "]" << std::endl;
+			}
+			while(!n) // block spurious wakeup
+				c.wait(locker); // wait notification
 		}
-
 
 		auto e = std::move(q.front());
 		q.pop();
-		std::cout << "\tpop  " << e << std::endl;
+		n  = false;
+
+		{
+			// print event
+			std::lock_guard<std::mutex> lp(g_lockprint);
+			std::cout << "\tpop  " << e << " [" << std::this_thread::get_id() << "]" << std::endl;
+		}
 
 		return e;
-		
 	}
 
 	void push(const T& e){
-		std::lock_guard<std::mutex> locker(m);
+		// try to lock main mutex
+		std::unique_lock<std::mutex> locker(m);
+
 		q.push(e);
-		std::cout << "push " << e << std::endl;
+		n = true;
+		c.notify_one();
+
+		{
+			// print event
+			std::lock_guard<std::mutex> lp(g_lockprint);
+			std::cout << "push " << e << " [" << std::this_thread::get_id() << "]" << std::endl;
+		}
 	}
 
 	int count() const {
@@ -47,8 +70,12 @@ template <typename T>
 int SyncQueue<T>::cnt = 0;
 
 
+
 void testPush(SyncQueue<int>& q, int aCnt){
-	std::cout << "entered thread " << std::this_thread::get_id() << std::endl;
+	{
+		std::lock_guard<std::mutex> lp(g_lockprint);
+		std::cout << "entered thread " << std::this_thread::get_id() << std::endl;
+	}
 	std::mt19937 gen(time(0)); 
     std::uniform_int_distribution<> uid(100, 200);
 	for (int i = 0; i < aCnt; i++){
@@ -59,7 +86,10 @@ void testPush(SyncQueue<int>& q, int aCnt){
 }
 
 void testPop(SyncQueue<int>& q, int aCnt){
-	std::cout << "entered thread " << std::this_thread::get_id() << std::endl;
+	{
+		std::lock_guard<std::mutex> lp(g_lockprint);
+		std::cout << "entered thread " << std::this_thread::get_id() << std::endl;
+	}
 	std::mt19937 gen(time(0)); 
     std::uniform_int_distribution<> uid(100, 400);
 	for (int i = 0; i < aCnt; i++){
