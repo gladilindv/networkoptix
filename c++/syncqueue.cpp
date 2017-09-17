@@ -14,7 +14,6 @@ class SyncQueue {
 	mutable std::mutex m;
 	std::queue<T> q;
 	std::condition_variable c;
-	bool n = false;
 
 	static int cnt;
 public:
@@ -28,13 +27,13 @@ public:
 				std::lock_guard<std::mutex> lp(g_lockprint);
 				std::cout << "\t\tempty  " << ++cnt << " ...waiting [" << std::this_thread::get_id() << "]" << std::endl;
 			}
-			while(!n) // block spurious wakeup
-				c.wait(locker); // wait notification
+			
+			// wait notification // block spurious wakeup
+			c.wait(locker, [&]{return !q.empty();});
 		}
 
 		auto e = std::move(q.front());
 		q.pop();
-		n  = false;
 
 		{
 			// print event
@@ -50,7 +49,6 @@ public:
 		std::unique_lock<std::mutex> locker(m);
 
 		q.push(e);
-		n = true;
 		c.notify_one();
 
 		{
